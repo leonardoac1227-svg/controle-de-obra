@@ -114,7 +114,7 @@
     <!-- Firebase -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, collection, onSnapshot, writeBatch, setDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         
         const loadingView = document.getElementById('loading-view');
@@ -191,54 +191,56 @@
         function setupRealtimeListener(userId) {
             if (unsubscribeData) unsubscribeData();
             loadingText.textContent = "A carregar dados da obra...";
-            const projectDocRef = doc(db, `controleDeObra/${userId}/cedroResidence/project`);
+            const projectCollectionRef = collection(db, `controleDeObra/${userId}/cedroResidence`);
 
-            unsubscribeData = onSnapshot(projectDocRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    try {
-                        currentData = JSON.parse(docSnap.data().project_json);
-                        loadingView.classList.remove('active');
-                        updateCurrentView();
-                    } catch (e) {
-                        showNotification("Os dados da obra estão corrompidos.");
-                    }
-                } else {
+            unsubscribeData = onSnapshot(projectCollectionRef, (querySnapshot) => {
+                if (querySnapshot.docs.length < TOTAL_BLOCKS) {
                     loadingText.textContent = "Primeiro acesso. A configurar a estrutura da obra...";
-                    initializeProjectData(projectDocRef);
+                    initializeProjectData(projectCollectionRef);
+                } else {
+                    currentData = {};
+                    querySnapshot.forEach(doc => {
+                        currentData[doc.id] = JSON.parse(doc.data().block_json);
+                    });
+                    loadingView.classList.remove('active');
+                    updateCurrentView();
                 }
             }, (error) => {
                 showNotification("Erro de conexão com a base de dados.");
             });
         }
         
-        async function initializeProjectData(docRef) {
-            const initialData = {};
+        async function initializeProjectData(collectionRef) {
+            const batch = writeBatch(db);
             for (let i = 1; i <= TOTAL_BLOCKS; i++) {
                 const blockId = `bloco-${i}`;
-                initialData[blockId] = { blockServices: {} };
+                const blockData = { blockServices: {} };
                 blockServices.forEach((_, serviceIndex) => {
-                    initialData[blockId].blockServices[`bserv-${serviceIndex}`] = { status: 'Não Iniciado', notes: '', lastUpdated: '' };
+                    blockData.blockServices[`bserv-${serviceIndex}`] = { status: 'Não Iniciado', notes: '', lastUpdated: '' };
                 });
 
                 floors.forEach((_, floorIndex) => {
                     const floorId = `pav-${floorIndex}`;
-                    initialData[blockId][floorId] = {};
+                    blockData[floorId] = {};
                     for (let j = 0; j < APARTMENTS_PER_FLOOR; j++) {
                         const aptId = `apto-${j}`;
-                        initialData[blockId][floorId][aptId] = {};
+                        blockData[floorId][aptId] = {};
                         services.forEach((_, serviceIndex) => {
-                            initialData[blockId][floorId][aptId][`serv-${serviceIndex}`] = { status: 'Não Iniciado', notes: '', lastUpdated: '' };
+                            blockData[floorId][aptId][`serv-${serviceIndex}`] = { status: 'Não Iniciado', notes: '', lastUpdated: '' };
                         });
                     }
-                    initialData[blockId][floorId][HALL_ID] = {};
+                    blockData[floorId][HALL_ID] = {};
                     services.forEach((_, serviceIndex) => {
-                        initialData[blockId][floorId][HALL_ID][`serv-${serviceIndex}`] = { status: 'Não Iniciado', notes: '', lastUpdated: '' };
+                        blockData[floorId][HALL_ID][`serv-${serviceIndex}`] = { status: 'Não Iniciado', notes: '', lastUpdated: '' };
                     });
                 });
+                const docRef = doc(collectionRef, blockId);
+                batch.set(docRef, { block_json: JSON.stringify(blockData) });
             }
             try {
-                await setDoc(docRef, { project_json: JSON.stringify(initialData) });
+                await batch.commit();
             } catch (error) {
+                console.error("Erro ao inicializar dados:", error);
                 showNotification("Falha ao configurar a obra.");
             }
         }
@@ -264,10 +266,11 @@
                  return;
             }
 
-            const projectDocRef = doc(db, `controleDeObra/${userId}/cedroResidence/project`);
+            const blockDocRef = doc(db, `controleDeObra/${userId}/cedroResidence/${currentBlockId}`);
+            const blockToUpdate = currentData[currentBlockId];
 
             try {
-                await setDoc(projectDocRef, { project_json: JSON.stringify(currentData) });
+                await setDoc(blockDocRef, { block_json: JSON.stringify(blockToUpdate) });
                 closeModal();
                 showNotification("Serviço atualizado com sucesso!", false);
             } catch (error) {
