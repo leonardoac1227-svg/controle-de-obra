@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Obra - Cedro Residence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></link>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .view { display: none; }
+        .view.active { display: block; animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 5px solid #3498db;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #notification-bar {
+            transition: transform 0.3s ease-in-out;
+            transform: translate(-50%, -120%);
+            z-index: 100;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div id="app" class="max-w-4xl mx-auto p-4">
+
+        <!-- CABEÇALHO -->
+        <header class="bg-white shadow-md rounded-lg p-4 mb-6 flex justify-between items-center">
+            <div>
+                <h1 id="header-title" class="text-2xl font-bold text-gray-700">Cedro Residence</h1>
+                <p id="header-subtitle" class="text-sm text-gray-500">Visão Geral dos Blocos</p>
+            </div>
+            <div class="flex items-center space-x-2">
+                 <button id="report-button" class="hidden bg-gray-600 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700 transition">
+                    <i class="fas fa-file-alt mr-2"></i>Relatório
+                </button>
+                <button id="back-button" class="hidden bg-blue-500 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-600 transition">
+                    <i class="fas fa-arrow-left mr-2"></i>Voltar
+                </button>
+            </div>
+        </header>
+
+        <!-- TELA DE CARREGAMENTO -->
+        <div id="loading-view" class="text-center py-20 active">
+            <div class="loader mx-auto"></div>
+            <p id="loading-text" class="mt-4 text-gray-600">A ligar aos serviços...</p>
+        </div>
+        
+        <!-- TELAS DA APLICAÇÃO -->
+        <div id="blocks-view" class="view">
+            <div id="blocks-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4"></div>
+        </div>
+        <div id="floors-view" class="view">
+            <div id="floors-list" class="space-y-4"></div>
+        </div>
+        <div id="apartments-view" class="view">
+            <div id="apartments-list" class="space-y-4"></div>
+        </div>
+        <div id="services-view" class="view">
+            <div id="services-list" class="bg-white rounded-lg shadow-md"></div>
+        </div>
+    </div>
+
+    <!-- MODAL DE ESTADO -->
+    <div id="status-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg p-6 w-11/12 max-w-sm">
+            <div class="flex justify-between items-start mb-4">
+                <h3 class="text-lg font-bold">Alterar Estado e Observação</h3>
+                <span id="last-updated-text" class="text-xs text-right text-gray-500 whitespace-nowrap ml-2"></span>
+            </div>
+            <div class="mb-4">
+                <label for="observation-text" class="block text-sm font-medium text-gray-700 mb-1">Observação:</label>
+                <textarea id="observation-text" rows="3" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+            </div>
+            <h4 class="text-md font-semibold mb-2 text-gray-800">Selecione o novo estado:</h4>
+            <div id="status-options" class="space-y-2"></div>
+            <div class="mt-6 flex justify-end">
+                <button id="close-modal-button" class="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-400">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+     <!-- MODAL DE RELATÓRIO -->
+    <div id="report-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg p-6 w-11/12 max-w-lg">
+            <h3 id="report-title" class="text-lg font-bold mb-4">Relatório de Pendências</h3>
+            <textarea id="report-text" readonly rows="10" class="w-full border border-gray-300 rounded-lg p-2 text-sm bg-gray-50 font-mono"></textarea>
+            <div class="mt-4 flex justify-between items-center">
+                <span id="copy-confirmation" class="text-green-600 text-sm opacity-0 transition-opacity">Relatório copiado!</span>
+                <div>
+                    <button id="copy-report-button" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"><i class="fas fa-copy mr-2"></i>Copiar</button>
+                    <button id="close-report-modal-button" class="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-400 ml-2">Fechar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BARRA DE NOTIFICAÇÃO -->
+    <div id="notification-bar" class="fixed top-4 left-1/2 w-11/12 max-w-md bg-red-500 text-white text-center p-3 rounded-lg shadow-lg">
+        <span id="notification-text"></span>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        
+        const loadingView = document.getElementById('loading-view');
+        const loadingText = document.getElementById('loading-text');
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyASW18uGr7OcBy0E5Hntk1cRjIGTkB6hCE",
+          authDomain: "controle-de-obra-cedro.firebaseapp.com",
+          projectId: "controle-de-obra-cedro",
+          storageBucket: "controle-de-obra-cedro.firebasestorage.app",
+          messagingSenderId: "413066555990",
+          appId: "1:413066555990:web:841c61f9a8c3c6b12281f7",
+          measurementId: "G-8H7HN0S3F5"
+        };
+
+        if (firebaseConfig.apiKey === "COLE_AQUI_SUA_API_KEY") {
+            loadingView.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg text-left"><h3 class="font-bold">Configuração Pendente</h3><p>É necessário inserir as suas credenciais do Firebase no código para a aplicação funcionar.</p></div>`;
+            throw new Error("A configuração do Firebase não foi encontrada.");
+        }
+
+        let app, db, auth;
+        let unsubscribeData = null; 
+
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            setLogLevel('debug');
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    setupRealtimeListener(user.uid);
+                } else {
+                    signInAnonymously(auth).catch(error => {
+                        console.error("Erro de Autenticação Anónima:", error);
+                        showNotification(`Erro de Autenticação: ${error.code}`);
+                    });
+                }
+            });
+        } catch (error) {
+            console.error("Erro de Inicialização:", error);
+            showNotification(`Erro Crítico: ${error.message}`);
+        }
+
+        // --- ESTRUTURA DE DADOS E CONFIGURAÇÕES ---
+        const TOTAL_BLOCKS = 28;
+        const APARTMENTS_PER_FLOOR = 4;
+        const HALL_ID = 'apto-hall';
+        const floors = ["Pav. Térreo", "Pav. 1", "Pav. 2", "Pav. 3", "Pav. 4"];
+        const blockServices = ["Fundação", "Cobertura"];
+        const services = [
+            "02-Forma e limpeza", "03-Lixamento de parede de concreto", "04-Graute da linha de vida", "05-Retrabalhos", 
+            "06-Aereo", "07-Isometrico", "08-Ramal do hall", "09-Chumbamento e grauteamento", "11-Alvenaria do hall", 
+            "12-Assentamento do Combogo", "13-Execução do Contrapiso", "14-Assentamento do peitoril", "15-Assentamento da Esquadrias", 
+            "16-Tratamento externo", "17-Assentamento do shaft", "18-Enfiação, disjuntores", "19-Impermeabilização", 
+            "20-Sanca, forro, shaft, arestamento", "21-Gesso Corrido", "22-Cerâmica", "23-Kit porta e Alizar", "24-Pintura"
+        ];
+        const statusConfig = {
+            'Não Iniciado': { color: 'bg-gray-200', text: 'text-gray-800', icon: 'fa-circle-notch' },
+            'Em Andamento': { color: 'bg-yellow-400', text: 'text-white', icon: 'fa-person-digging' },
+            'Concluído': { color: 'bg-green-500', text: 'text-white', icon: 'fa-check-circle' },
+            'Liberado c/ Pendência': { color: 'bg-orange-400', text: 'text-white', icon: 'fa-exclamation-triangle' },
+            'Reprovado': { color: 'bg-red-500', text: 'text-white', icon: 'fa-times-circle' },
+        };
+        const statusOptions = Object.keys(statusConfig);
+        
+        let currentData = {};
+        let currentBlockId = null;
+        let currentFloorId = null;
+        let currentApartmentId = null;
+        let currentServiceId = null;
+
+        // --- LÓGICA DE DADOS ---
+        function setupRealtimeListener(userId) {
+            if (unsubscribeData) unsubscribeData();
+            loadingText.textContent = "A carregar dados da obra...";
+            const projectDocRef = doc(db, `controleDeObra/${userId}/cedroResidence/project`);
+
+            unsubscribeData = onSnapshot(projectDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    try {
+                        currentData = JSON.parse(docSnap.data().project_json);
+                        loadingView.classList.remove('active');
+                        updateCurrentView();
+                    } catch (e) {
+                        showNotification("Os dados da obra estão corrompidos.");
+                    }
+                } else {
+                    loadingText.textContent = "Primeiro acesso. A configurar a estrutura da obra...";
+                    initializeProjectData(projectDocRef);
+                }
+            }, (error) => {
+                showNotification("Erro de conexão com a base de dados.");
+            });
+        }
+        
+        async function initializeProjectData(docRef) {
+            const initialData = {};
+            for (let i = 1; i <= TOTAL_BLOCKS; i++) {
+                const blockId = `bloco-${i}`;
+                initialData[blockId] = { blockServices: {} };
+                blockServices.forEach((_, serviceIndex) => {
+                    initialData[blockId].blockServices[`bserv-${serviceIndex}`] = { status: 'Não Iniciado', notes: '', lastUpdated: '' };
+                });
+
+                floors.forEach((_, floorIndex) => {
+                    const floorId = `pav-${floorIndex}`;
+                    initialData[blockId][floorId] = {};
+                    for (let j = 0; j < APARTMENTS_PER_FLOOR; j++) {
+                        const aptId = `apto-${j}`;
+                        initialData[blockId][floorId][aptId] = {};
+                        services.forEach((_, serviceIndex) => {
+                            initialData[blockId][floorId][aptId][`serv-${serviceIndex}`] = { status: 'Não Iniciado', notes: '', lastUpdated: '' };
+                        });
+                    }
+                    initialData[blockId][floorId][HALL_ID] = {};
+                    services.forEach((_, serviceIndex) => {
+                        initialData[blockId][floorId][HALL_ID][`serv-${serviceIndex}`] = { status: 'Não Iniciado', notes: '', lastUpdated: '' };
+                    });
+                });
+            }
+            try {
+                await setDoc(docRef, { project_json: JSON.stringify(initialData) });
+            } catch (error) {
+                showNotification("Falha ao configurar a obra.");
+            }
+        }
+
+        async function updateService(newStatus) {
+            const userId = auth.currentUser?.uid;
+            if (!userId) return showNotification("Utilizador não autenticado.");
+
+            const observationText = document.getElementById('observation-text').value;
+            
+            try {
+                let service;
+                 if (currentFloorId === null && currentApartmentId === null) {
+                    service = currentData[currentBlockId].blockServices[currentServiceId];
+                } else {
+                    service = currentData[currentBlockId][currentFloorId][currentApartmentId][currentServiceId];
+                }
+                service.status = newStatus;
+                service.notes = observationText;
+                service.lastUpdated = new Date().toISOString();
+            } catch (e) {
+                 showNotification("Ocorreu um erro local. Tente novamente.");
+                 return;
+            }
+
+            const projectDocRef = doc(db, `controleDeObra/${userId}/cedroResidence/project`);
+
+            try {
+                await setDoc(projectDocRef, { project_json: JSON.stringify(currentData) });
+                closeModal();
+                showNotification("Serviço atualizado com sucesso!", false);
+            } catch (error) {
+                showNotification("Não foi possível guardar a alteração no servidor.");
+            }
+        }
+
+        // --- LÓGICA DE RENDERIZAÇÃO E NAVEGAÇÃO ---
+        function updateCurrentView() {
+            const activeView = document.querySelector('.view.active');
+            if (!activeView || activeView.id === 'blocks-view' || Object.keys(currentData).length === 0) {
+                 renderBlocks();
+                 if(!document.getElementById('blocks-view').classList.contains('active')) navigate('blocks-view');
+            } else {
+                 switch (activeView.id) {
+                    case 'floors-view': renderFloors(); break;
+                    case 'apartments-view': renderApartments(); break;
+                    case 'services-view': renderServices(); break;
+                    default: renderBlocks(); navigate('blocks-view');
+                 }
+            }
+        }
+
+        const navigate = (viewId) => {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            
+            const backButton = document.getElementById('back-button');
+            const reportButton = document.getElementById('report-button');
+            const headerTitle = document.getElementById('header-title');
+            const headerSubtitle = document.getElementById('header-subtitle');
+            
+            const blockName = currentBlockId ? `Bloco ${currentBlockId.split('-')[1].padStart(2, '0')}` : "Cedro Residence";
+            headerTitle.innerText = blockName;
+
+            reportButton.classList.add('hidden'); // Ocultar por defeito
+
+            if (viewId === 'blocks-view') {
+                backButton.classList.add('hidden');
+                headerTitle.innerText = "Cedro Residence";
+                headerSubtitle.innerText = "Visão Geral dos Blocos";
+            } else {
+                backButton.classList.remove('hidden');
+                reportButton.classList.remove('hidden'); // Mostrar nas vistas de detalhe
+                const floorIndex = currentFloorId ? parseInt(currentFloorId.split('-')[1]) : -1;
+                const floorName = floorIndex !== -1 ? floors[floorIndex] : '';
+                if (viewId === 'floors-view') headerSubtitle.innerText = "Visão dos Pavimentos";
+                else if (viewId === 'apartments-view') headerSubtitle.innerText = `${floorName} - Apartamentos e Hall`;
+                else if (viewId === 'services-view') {
+                    const aptName = getApartmentName(floorIndex, currentApartmentId);
+                    headerSubtitle.innerText = `${floorName} - ${aptName}`;
+                }
+            }
+        };
+        
+        const calculateProgressAndStatus = (scope, level) => {
+            const allServices = [];
+             if (level === 'block') {
+                if(scope.blockServices) allServices.push(...Object.values(scope.blockServices));
+                Object.keys(scope).filter(k => k.startsWith('pav-')).forEach(key => Object.values(scope[key]).forEach(apt => allServices.push(...Object.values(apt))));
+            } else if (level === 'floor') {
+                Object.values(scope).forEach(apt => allServices.push(...Object.values(apt)));
+            } else if (level === 'apartment') {
+                 allServices.push(...Object.values(scope));
+            }
+
+            if (allServices.length === 0) return { progress: 0, colorClass: 'bg-blue-600', summaryText: '0%'};
+
+            let completed = 0;
+            let hasPending = false;
+            let hasReproved = false;
+
+            allServices.forEach(s => {
+                if(s.status === 'Concluído' || s.status === 'Liberado c/ Pendência') completed++;
+                if(s.status === 'Liberado c/ Pendência') hasPending = true;
+                if(s.status === 'Reprovado') hasReproved = true;
+            });
+
+            const progress = (completed / allServices.length) * 100;
+            let colorClass = 'bg-blue-600';
+            let summaryText = `${Math.round(progress)}%`;
+
+            if (hasReproved) {
+                colorClass = 'bg-red-500';
+                summaryText = 'REPROVADO';
+            } else if (hasPending) {
+                colorClass = 'bg-orange-400';
+                summaryText = 'PENDÊNCIAS';
+            } else if (progress === 100) {
+                colorClass = 'bg-green-500';
+                summaryText = 'CONCLUÍDO';
+            }
+
+            return { progress, colorClass, summaryText };
+        };
+
+        const renderBlocks = () => {
+            const grid = document.getElementById('blocks-grid');
+            grid.innerHTML = '';
+            if (!currentData) return;
+            Object.keys(currentData).sort((a, b) => parseInt(a.split('-')[1]) - parseInt(b.split('-')[1])).forEach(blockId => {
+                const blockData = currentData[blockId];
+                if (!blockData) return;
+                const { progress, colorClass, summaryText } = calculateProgressAndStatus(blockData, 'block');
+                const blockEl = document.createElement('div');
+                blockEl.className = 'bg-white p-4 rounded-lg shadow-md flex flex-col justify-between cursor-pointer hover:shadow-xl transition';
+                blockEl.innerHTML = `<div class="flex justify-between items-center"><h3 class="font-bold text-lg text-gray-700">Bloco ${String(blockId.split('-')[1]).padStart(2, '0')}</h3><span class="text-xs font-bold ${colorClass.replace('bg-','text-')}">${summaryText}</span></div><div class="mt-2"><div class="w-full bg-gray-200 rounded-full h-2.5"><div class="${colorClass} h-2.5 rounded-full" style="width: ${progress}%"></div></div></div>`;
+                blockEl.onclick = () => { currentBlockId = blockId; currentFloorId = null; currentApartmentId = null; renderFloors(); navigate('floors-view'); };
+                grid.appendChild(blockEl);
+            });
+        };
+
+        const renderFloors = () => {
+            const list = document.getElementById('floors-list');
+            list.innerHTML = '';
+            const blockData = currentData[currentBlockId];
+            if(!blockData) return;
+            
+            if (blockData.blockServices) {
+                const container = document.createElement('div');
+                container.className = 'bg-white p-4 rounded-lg shadow-md mb-4';
+                container.innerHTML = `<h3 class="font-bold text-lg text-gray-700 mb-2 border-b pb-2">Serviços Gerais do Bloco</h3>`;
+                const servicesListEl = document.createElement('div');
+                blockServices.forEach((serviceName, index) => {
+                    const serviceId = `bserv-${index}`;
+                    const serviceData = blockData.blockServices[serviceId];
+                    if (!serviceData) return;
+                    const config = statusConfig[serviceData.status];
+                    const noteIcon = serviceData.notes ? `<i class="fas fa-comment-dots text-gray-400 ml-2" title="${serviceData.notes}"></i>` : '';
+                    const el = document.createElement('div');
+                    el.className = 'flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 rounded-md';
+                    el.innerHTML = `<div class="flex items-center flex-grow text-gray-700 mr-4"><span>${serviceName}</span>${noteIcon}</div><div class="${config.color} ${config.text} text-xs font-semibold px-3 py-1 rounded-full flex items-center flex-shrink-0"><i class="fas ${config.icon} mr-2"></i><span>${serviceData.status}</span></div>`;
+                    el.onclick = () => { currentFloorId = null; currentApartmentId = null; currentServiceId = serviceId; openStatusModal(); };
+                    servicesListEl.appendChild(el);
+                });
+                container.appendChild(servicesListEl);
+                list.appendChild(container);
+            }
+            
+            floors.forEach((floorName, index) => {
+                const floorId = `pav-${index}`;
+                const floorData = blockData[floorId];
+                if(!floorData) return;
+                const { progress, colorClass, summaryText } = calculateProgressAndStatus(floorData, 'floor');
+                const floorEl = document.createElement('div');
+                floorEl.className = 'bg-white p-4 rounded-lg shadow-md cursor-pointer hover:shadow-lg transition';
+                floorEl.innerHTML = `<div class="flex justify-between items-center"><h3 class="font-bold text-lg text-gray-700">${floorName}</h3><span class="text-xs font-bold ${colorClass.replace('bg-','text-')}">${summaryText}</span></div><div class="w-full bg-gray-200 rounded-full h-2.5 mt-2"><div class="${colorClass} h-2.5 rounded-full" style="width: ${progress}%"></div></div>`;
+                floorEl.onclick = () => { currentFloorId = floorId; renderApartments(); navigate('apartments-view'); };
+                list.appendChild(floorEl);
+            });
+        };
+
+        const renderApartments = () => {
+            const list = document.getElementById('apartments-list');
+            list.innerHTML = '';
+            const floorData = currentData[currentBlockId]?.[currentFloorId];
+            if(!floorData) return;
+            const floorIndex = parseInt(currentFloorId.split('-')[1]);
+            Object.keys(floorData).sort((a,b) => (a === HALL_ID) ? 1 : (b === HALL_ID) ? -1 : parseInt(a.split('-')[1]) - parseInt(b.split('-')[1]))
+            .forEach(aptId => {
+                const aptData = floorData[aptId];
+                if (!aptData) return;
+                const { progress, colorClass, summaryText } = calculateProgressAndStatus(aptData, 'apartment');
+                const aptName = getApartmentName(floorIndex, aptId);
+                const isHall = aptId === HALL_ID;
+                const aptEl = document.createElement('div');
+                aptEl.className = `${isHall ? 'bg-indigo-50' : 'bg-white'} p-4 rounded-lg shadow-md cursor-pointer hover:shadow-lg transition`;
+                aptEl.innerHTML = `<div class="flex justify-between items-center"><h3 class="font-bold text-lg text-gray-700">${aptName}</h3><span class="text-xs font-bold ${colorClass.replace('bg-','text-')}">${summaryText}</span></div><div class="w-full bg-gray-200 rounded-full h-2.5 mt-2"><div class="${isHall ? colorClass.replace('blue', 'indigo') : colorClass.replace('blue','purple')} h-2.5 rounded-full" style="width: ${progress}%"></div></div>`;
+                aptEl.onclick = () => { currentApartmentId = aptId; renderServices(); navigate('services-view'); };
+                list.appendChild(aptEl);
+            });
+        };
+        
+        const renderServices = () => {
+            const list = document.getElementById('services-list');
+            list.innerHTML = '';
+            const aptData = currentData[currentBlockId]?.[currentFloorId]?.[currentApartmentId];
+            if(!aptData) return;
+            services.forEach((serviceName, index) => {
+                const serviceId = `serv-${index}`;
+                const serviceData = aptData[serviceId];
+                if(!serviceData) return;
+                const config = statusConfig[serviceData.status];
+                const noteIcon = serviceData.notes ? `<i class="fas fa-comment-dots text-gray-400 ml-2" title="${serviceData.notes}"></i>` : '';
+                const serviceEl = document.createElement('div');
+                serviceEl.className = 'flex items-center justify-between p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50';
+                serviceEl.innerHTML = `<div class="flex items-center flex-grow text-gray-700 mr-4"><span>${serviceName}</span>${noteIcon}</div><div class="${config.color} ${config.text} text-xs font-semibold px-3 py-1 rounded-full flex items-center flex-shrink-0"><i class="fas ${config.icon} mr-2"></i><span>${serviceData.status}</span></div>`;
+                serviceEl.onclick = () => { currentServiceId = serviceId; openStatusModal(); };
+                list.appendChild(serviceEl);
+            });
+        };
+
+        // --- HELPERS E EVENTOS ---
+        const formatDate = (isoString) => {
+            if (!isoString) return 'Nunca modificado';
+            const date = new Date(isoString);
+            return `Modif. em: ${date.toLocaleString('pt-BR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+        };
+        const getApartmentName = (floorIndex, aptId) => (aptId === HALL_ID) ? 'HALL' : `Apto ${floorIndex === 0 ? String(parseInt(aptId.split('-')[1]) + 1).padStart(2, '0') : `${floorIndex}0${parseInt(aptId.split('-')[1]) + 1}`}`;
+        
+        const openStatusModal = () => {
+            let serviceData;
+             if (currentFloorId === null && currentApartmentId === null) { // É um serviço de bloco
+                serviceData = currentData[currentBlockId]?.blockServices?.[currentServiceId];
+            } else { // É um serviço de apartamento
+                serviceData = currentData[currentBlockId]?.[currentFloorId]?.[currentApartmentId]?.[currentServiceId];
+            }
+            if(!serviceData) return;
+            
+            const modal = document.getElementById('status-modal');
+            document.getElementById('last-updated-text').textContent = formatDate(serviceData.lastUpdated);
+            document.getElementById('observation-text').value = serviceData.notes || '';
+            const optionsContainer = document.getElementById('status-options');
+            optionsContainer.innerHTML = '';
+            statusOptions.forEach(status => {
+                const config = statusConfig[status];
+                const optionEl = document.createElement('button');
+                optionEl.className = `w-full text-left p-3 rounded-lg flex items-center transition ${config.color} ${config.text}`;
+                if (status === serviceData.status) optionEl.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+                optionEl.innerHTML = `<i class="fas ${config.icon} mr-3"></i><span>${status}</span>`;
+                optionEl.onclick = () => updateService(status);
+                optionsContainer.appendChild(optionEl);
+            });
+            modal.classList.remove('hidden');
+        };
+        
+        const closeModal = () => document.getElementById('status-modal').classList.add('hidden');
+
+        const generateReport = () => {
+            const activeView = document.querySelector('.view.active');
+            let scopeData, scopeName, report = '';
+            
+            if (activeView.id === 'services-view' && currentApartmentId) {
+                const floorIndex = parseInt(currentFloorId.split('-')[1]);
+                scopeName = `Apartamento ${getApartmentName(floorIndex, currentApartmentId)}`;
+                scopeData = {[scopeName]: currentData[currentBlockId][currentFloorId][currentApartmentId]};
+            } else if (activeView.id === 'apartments-view' && currentFloorId) {
+                scopeName = `Pavimento ${floors[parseInt(currentFloorId.split('-')[1])]}`;
+                scopeData = currentData[currentBlockId][currentFloorId];
+            } else if (activeView.id === 'floors-view' && currentBlockId) {
+                scopeName = `Bloco ${currentBlockId.split('-')[1]}`;
+                scopeData = currentData[currentBlockId];
+            } else return;
+            
+            report = `Relatório de Pendências - ${scopeName}\n`;
+            report += `Gerado em: ${new Date().toLocaleString('pt-BR')}\n====================================\n\n`;
+            let issuesFound = false;
+
+            const processApartment = (aptData, aptName) => {
+                let aptIssues = '';
+                Object.keys(aptData).forEach(servId => {
+                    const service = aptData[servId];
+                    const serviceName = services[parseInt(servId.split('-')[1])];
+                    if (service.status === 'Reprovado' || service.status === 'Liberado c/ Pendência') {
+                        issuesFound = true;
+                        aptIssues += `[${service.status.toUpperCase()}] ${serviceName}\n`;
+                        if (service.notes) aptIssues += `  -> OBS: ${service.notes}\n`;
+                    }
+                });
+                if (aptIssues) report += `--- ${aptName} ---\n${aptIssues}\n`;
+            };
+
+            if (activeView.id === 'services-view') {
+                processApartment(scopeData[scopeName], scopeName);
+            } else { // Floor or Block view
+                Object.keys(scopeData).forEach(id => {
+                    const floorIndex = activeView.id === 'floors-view' ? parseInt(currentFloorId.split('-')[1]) : parseInt(id.split('-')[1]);
+                    const floorData = activeView.id === 'floors-view' ? scopeData : scopeData[id];
+                    Object.keys(floorData).forEach(aptId => {
+                        const aptName = getApartmentName(floorIndex, aptId);
+                        processApartment(floorData[aptId], aptName);
+                    });
+                });
+            }
+
+            if (!issuesFound) report += 'Nenhuma pendência ou item reprovado encontrado no escopo selecionado.';
+            
+            document.getElementById('report-title').innerText = `Relatório - ${scopeName}`;
+            document.getElementById('report-text').value = report;
+            document.getElementById('report-modal').classList.remove('hidden');
+        };
+
+        function showNotification(message, isError = true) {
+            const bar = document.getElementById('notification-bar');
+            const text = document.getElementById('notification-text');
+            
+            text.textContent = message;
+            bar.className = 'fixed top-4 left-1/2 w-11/12 max-w-md text-white text-center p-3 rounded-lg shadow-lg';
+            bar.classList.add(isError ? 'bg-red-500' : 'bg-green-500');
+
+            bar.style.transform = 'translate(-50%, 0)';
+            setTimeout(() => {
+                bar.style.transform = 'translate(-50%, -120%)';
+            }, 4000);
+        }
+        
+        document.getElementById('back-button').addEventListener('click', () => {
+            const activeViewId = document.querySelector('.view.active').id;
+            if (activeViewId === 'services-view') { renderApartments(); navigate('apartments-view'); }
+            else if (activeViewId === 'apartments-view') { renderFloors(); navigate('floors-view'); }
+            else if (activeViewId === 'floors-view') { currentBlockId = null; renderBlocks(); navigate('blocks-view'); }
+        });
+        document.getElementById('close-modal-button').addEventListener('click', closeModal);
+        document.getElementById('report-button').addEventListener('click', generateReport);
+        document.getElementById('close-report-modal-button').addEventListener('click', () => document.getElementById('report-modal').classList.add('hidden'));
+        document.getElementById('copy-report-button').addEventListener('click', () => {
+            const reportText = document.getElementById('report-text');
+            navigator.clipboard.writeText(reportText.value).then(() => {
+                const confirmation = document.getElementById('copy-confirmation');
+                confirmation.style.opacity = '1';
+                setTimeout(() => { confirmation.style.opacity = '0'; }, 2000);
+            });
+        });
+    </script>
+</body>
+</html>
